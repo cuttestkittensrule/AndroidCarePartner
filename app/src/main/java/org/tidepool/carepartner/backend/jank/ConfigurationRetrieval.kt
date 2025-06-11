@@ -40,8 +40,8 @@ private class ConfigurationRetrievalTask(
     override fun run() {
         try {
             connectionBuilder.openConnection(uri).apply {
-                setRequestMethod("GET")
-                setDoInput(true)
+                requestMethod = "GET"
+                doInput = true
                 connect()
             }.inputStream.bufferedReader().use {
                 it.readText()
