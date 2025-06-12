@@ -13,7 +13,6 @@ import org.tidepool.carepartner.backend.PersistentData
 import org.tidepool.carepartner.backend.PillData
 import org.tidepool.carepartner.backend.WarningType
 import org.tidepool.carepartner.backend.WarningType.*
-import org.tidepool.carepartner.backend.data.DataState.Companion.TAG
 import org.tidepool.carepartner.backend.jank.performTokenRequest
 import org.tidepool.sdk.CommunicationHelper
 import org.tidepool.sdk.model.BloodGlucose.GlucoseReading
@@ -28,24 +27,44 @@ import org.tidepool.sdk.model.metadata.users.TrustUser
 import org.tidepool.sdk.model.metadata.users.TrustorUser
 import org.tidepool.sdk.model.mgdl
 import org.tidepool.sdk.requests.Data.CommaSeparatedArray
+import org.tidepool.sdk.requests.accept
+import org.tidepool.sdk.requests.dismiss
 import org.tidepool.sdk.requests.receivedInvitations
 import java.time.Instant
 import java.time.temporal.ChronoUnit
 import kotlin.time.measureTime
 
 class RealBackendDataSource(private val authState: AuthState): BackendDataSource {
+    companion object {
+        const val TAG = "RealBackendDataSource"
+    }
     
     private val communicationHelper by lazy { CommunicationHelper(PersistentData.environment) }
-    private val gson by CommunicationHelper.Companion::gsonConfig
+    
+    private var isSetup = false
+    private val setupContext = Dispatchers.Default.limitedParallelism(1)
     
     override suspend fun setup() {
-        authState.lastAuthorizationResponse?.let {
-            try {
-                val resp = performTokenRequest(it.createTokenExchangeRequest())
-                authState.update(resp, null)
-            } catch (ex: AuthorizationException) {
-                authState.update(null as TokenResponse?, ex)
+        if (!isSetup) {
+            withContext(setupContext) {
+                if (!isSetup) {
+                    authState.lastAuthorizationResponse?.let {
+                        try {
+                            val resp = performTokenRequest(it.createTokenExchangeRequest())
+                            authState.update(resp, null)
+                        } catch (ex: AuthorizationException) {
+                            Log.w(TAG, "Token exchange request failed with error: $ex")
+                            authState.update(null as TokenResponse?, ex)
+                        }
+                        isSetup = true
+                        Log.v(TAG, "Finished Setup!")
+                    }
+                } else {
+                    Log.v(TAG, "Skipping setup; already setup")
+                }
             }
+        } else {
+            Log.v(TAG, "Already setup")
         }
     }
     
@@ -65,7 +84,34 @@ class RealBackendDataSource(private val authState: AuthState): BackendDataSource
         return mapOf(*list.toTypedArray())
     }
     
+    override suspend fun saveEmail() {
+        PersistentData.saveEmail {
+            getAccessToken()
+        }
+    }
+    
+    override suspend fun acceptConfirmation(confirmation: Confirmation) {
+        communicationHelper.confirmations.accept(
+            getAccessToken(),
+            communicationHelper.users.getCurrentUserInfo(
+                getAccessToken()
+            ).userid,
+            confirmation
+        )
+    }
+    
+    override suspend fun rejectConfirmation(confirmation: Confirmation) {
+        communicationHelper.confirmations.dismiss(
+            getAccessToken(),
+            communicationHelper.users.getCurrentUserInfo(
+                getAccessToken()
+            ).userid,
+            confirmation
+        )
+    }
+    
     private fun getIdFlow(): Flow<Pair<String, String?>> = flow {
+        Log.v(TAG, "Getting userId")
         val userId = communicationHelper.users.getCurrentUserInfo(getAccessToken()).userid
         Log.v(TAG, "Listing users...")
         val trustUsers = communicationHelper.metadata.listUsers(getAccessToken(), userId)
@@ -231,6 +277,7 @@ class RealBackendDataSource(private val authState: AuthState): BackendDataSource
     private val accessTokenContext = Dispatchers.Default.limitedParallelism(1)
     
     private suspend fun refreshToken() {
+        Log.v(TAG, "Refreshing token...")
         try {
             val response = performTokenRequest(authState.createTokenRefreshRequest())
             authState.update(response, null)
@@ -247,6 +294,6 @@ class RealBackendDataSource(private val authState: AuthState): BackendDataSource
                 }
             }
         }
-        return authState.refreshToken ?: throw NullPointerException("No Access token!")
+        return authState.accessToken ?: throw NullPointerException("No Access token!")
     }
 }

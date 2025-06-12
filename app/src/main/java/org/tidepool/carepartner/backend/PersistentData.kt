@@ -175,29 +175,14 @@ class PersistentData {
             }
         }
         
-        suspend fun Context.saveEmail() {
+        suspend fun saveEmail(accessToken: suspend () -> String) {
             val helper = CommunicationHelper(environment)
-            val (email, userId) = helper.users.getCurrentUserInfo(getAccessToken())
+            val (email, userId) = helper.users.getCurrentUserInfo(accessToken())
                 .let { it.username to it.userid }
-            val name = helper.metadata.getProfile(getAccessToken(), userId).fullName
+            val name = helper.metadata.getProfile(accessToken(), userId).fullName
             _lastName = name
             _lastEmail = email
             Log.v(TAG, "lastEmail: $_lastEmail, lastName: $name")
-        }
-        
-        suspend fun Context.getIdToken(): String {
-            if (authState.idToken == null) {
-                exchangeAuthCode()
-            }
-            return suspendCancellableCoroutine { continuation ->
-                _authState.performActionWithFreshTokens(AuthorizationService(this)) { _, idToken, ex ->
-                    if (ex != null) {
-                        continuation.resumeWithException(ex)
-                    } else {
-                        continuation.resume(idToken!!)
-                    }
-                }
-            }
         }
         
         fun getAuthRequestBuilder(): AuthorizationRequest.Builder = runBlocking {

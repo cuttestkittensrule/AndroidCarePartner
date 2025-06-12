@@ -44,9 +44,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.tidepool.carepartner.FollowActivity.Companion.executor
 import org.tidepool.carepartner.FollowUI.InvitationState.*
-import org.tidepool.carepartner.backend.DataUpdater
-import org.tidepool.carepartner.backend.DataUpdater.FatalDataException
-import org.tidepool.carepartner.backend.DataUpdater.TokenExpiredException
 import org.tidepool.carepartner.backend.PersistentData
 import org.tidepool.carepartner.backend.PersistentData.Companion.logout
 import org.tidepool.carepartner.backend.PillData
@@ -81,30 +78,6 @@ import kotlin.time.Duration.Companion.seconds
 class FollowUI : DefaultLifecycleObserver {
     
     internal var future: ScheduledFuture<*>? = null
-    private var updater: DataUpdater? = null
-    
-    private fun startDataCollection() {
-        updater?.let {
-            future?.cancel(true)
-            future = executor.scheduleWithFixedDelay(
-                updater, 0, 1, TimeUnit.MINUTES
-            )
-        }
-    }
-    
-    private fun stopDataCollection() {
-        future?.cancel(false)
-        future = null
-    }
-    
-    override fun onResume(owner: LifecycleOwner) {
-        startDataCollection()
-    }
-    
-    override fun onPause(owner: LifecycleOwner) {
-        stopDataCollection()
-    }
-    
     @Composable
     fun Invitations(
         invitationsState: State<Array<Confirmation>>,
@@ -206,7 +179,8 @@ class FollowUI : DefaultLifecycleObserver {
     
     @Composable
     fun NoInvitations(
-        userNumber: MutableIntState
+        userNumber: MutableIntState,
+        
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -222,7 +196,7 @@ class FollowUI : DefaultLifecycleObserver {
                 onClick = {
                     runBlocking {
                         withTimeout(5.seconds) {
-                            updater?.updateInvitations()
+                        
                         }
                     }
                 },
@@ -250,7 +224,10 @@ class FollowUI : DefaultLifecycleObserver {
     }
     
     @Composable
-    fun Invitation(confirmation: Confirmation) {
+    fun Invitation(
+        confirmation: Confirmation,
+        dataState: DataState = defaultDataState()
+    ) {
         Card {
             Row(
                 modifier = Modifier.padding(5.dp),
@@ -283,7 +260,7 @@ class FollowUI : DefaultLifecycleObserver {
                                 .clickable {
                                     runBlocking {
                                         withTimeout(15.seconds) {
-                                            updater?.rejectConfirmation(confirmation)
+                                            dataState.rejectConfirmation(confirmation)
                                         }
                                     }
                                 }
@@ -291,12 +268,12 @@ class FollowUI : DefaultLifecycleObserver {
                         )
                         Image(
                             painterResource(R.drawable.accept),
-                            "Reject",
+                            "Accept",
                             modifier = Modifier
                                 .clickable {
                                     runBlocking {
                                         withTimeout(15.seconds) {
-                                            updater?.acceptConfirmation(confirmation)
+                                            dataState.acceptConfirmation(confirmation)
                                         }
                                     }
                                 }
@@ -754,6 +731,28 @@ class FollowUI : DefaultLifecycleObserver {
                 .padding(horizontal = 5.dp)
         )
     }
+    @Composable
+    fun defaultDataState(
+        foloweeData: Array<out PillData> = emptyArray(),
+        invitations: Array<Confirmation> = emptyArray()
+    ): DataState {
+        return viewModel(
+            factory = DataState.Factory,
+            extras = MutableCreationExtras().apply {
+                val map = foloweeData.associateBy { it.name }
+                val repository = DataRepository(
+                    FakeBackendDataSource(
+                        foloweeData = map,
+                        invitations = invitations
+                    )
+                )
+                set(
+                    DataState.DATA_REPOSITORY_KEY,
+                    repository
+                )
+            }
+        )
+    }
     
     /**
      * The application to render. This is not in the callback so that if there is a method to
@@ -763,29 +762,9 @@ class FollowUI : DefaultLifecycleObserver {
     @Composable
     fun App(
         modifier: Modifier = Modifier,
-        allData: Array<out PillData>? = null,
+        allData: Array<out PillData> = emptyArray(),
         backPressed: MutableState<Boolean> = mutableStateOf(false),
-        dataState: DataState = viewModel(
-            factory = DataState.Factory,
-            extras = MutableCreationExtras().apply {
-                if (allData == null) {
-                    set(
-                        DataState.DATA_REPOSITORY_KEY,
-                        DataRepository(
-                            FakeBackendDataSource()
-                        )
-                    )
-                } else {
-                    val map = allData.associateBy { it.name }
-                    set(
-                        DataState.DATA_REPOSITORY_KEY,
-                        DataRepository(
-                            FakeBackendDataSource(foloweeData = map)
-                        )
-                    )
-                }
-            }
-        )
+        dataState: DataState = defaultDataState(allData)
     ) {
         val idsState = dataState.data.collectAsState()
         val ids by idsState
@@ -806,37 +785,38 @@ class FollowUI : DefaultLifecycleObserver {
         
         Box(modifier.fillMaxSize()) {
             lastError.value?.let {
-                AlertDialog(
-                    title = {
-                        Text(stringResource(R.string.error_occurred))
-                    },
-                    text = {
-                        var message: String? = null
-                        if (it is FatalDataException) {
-                            it.cause?.let { cause ->
-                                message =
-                                    "${it.message ?: "A Fatal Exception Occurred"}: ${cause::class.qualifiedName ?: "Unknown"}: ${cause.message ?: "No message"}"
-                            }
-                        }
-                        message = message
-                            ?: "${it::class.qualifiedName ?: "Unknown"}: ${it.message ?: "No message"}"
-                        Text(message!!)
-                    },
-                    onDismissRequest = {
-                        context.handleError(lastError)
-                    },
-                    confirmButton = {
-                        TextButton(
-                            onClick = {
-                                context.handleError(lastError)
-                            }
-                        ) {
-                            Text(
-                                stringResource(R.string.error_acknowledge)
-                            )
-                        }
-                    }
-                )
+                TODO("redo error handling")
+                // AlertDialog(
+                //     title = {
+                //         Text(stringResource(R.string.error_occurred))
+                //     },
+                //     text = {
+                //         var message: String? = null
+                //         if (it is FatalDataException) {
+                //             it.cause?.let { cause ->
+                //                 message =
+                //                     "${it.message ?: "A Fatal Exception Occurred"}: ${cause::class.qualifiedName ?: "Unknown"}: ${cause.message ?: "No message"}"
+                //             }
+                //         }
+                //         message = message
+                //             ?: "${it::class.qualifiedName ?: "Unknown"}: ${it.message ?: "No message"}"
+                //         Text(message!!)
+                //     },
+                //     onDismissRequest = {
+                //         context.handleError(lastError)
+                //     },
+                //     confirmButton = {
+                //         TextButton(
+                //             onClick = {
+                //                 context.handleError(lastError)
+                //             }
+                //         ) {
+                //             Text(
+                //                 stringResource(R.string.error_acknowledge)
+                //             )
+                //         }
+                //     }
+                // )
             }
             Scaffold(
                 modifier = modifier,
@@ -1175,15 +1155,16 @@ class FollowUI : DefaultLifecycleObserver {
     }
     
     private fun Context.handleError(state: MutableState<Exception?>) {
-        var value by state
-        if (value is FatalDataException) {
-            future?.cancel(true)
-            when (value) {
-                is TokenExpiredException -> retryAuthorize()
-                else                     -> logout()
-            }
-        }
-        value = null
+        TODO("redo error handling")
+        // var value by state
+        // if (value is FatalDataException) {
+        //     future?.cancel(true)
+        //     when (value) {
+        //         is TokenExpiredException -> retryAuthorize()
+        //         else                     -> logout()
+        //     }
+        // }
+        // value = null
     }
 }
 

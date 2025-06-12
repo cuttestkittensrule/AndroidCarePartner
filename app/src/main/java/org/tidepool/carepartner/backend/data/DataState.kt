@@ -7,10 +7,9 @@ import androidx.lifecycle.viewmodel.CreationExtras
 import androidx.lifecycle.viewmodel.initializer
 import androidx.lifecycle.viewmodel.viewModelFactory
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.WhileSubscribed
-import kotlinx.coroutines.flow.flow
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
+import org.tidepool.carepartner.backend.PersistentData
 import org.tidepool.carepartner.backend.PillData
 import org.tidepool.sdk.model.confirmations.Confirmation
 import kotlin.time.Duration.Companion.minutes
@@ -43,6 +42,9 @@ class DataState(
         try {
             while(true) {
                 val elapsed = measureTime {
+                    if (PersistentData.lastEmail == null) {
+                        dataRepository.saveEmail()
+                    }
                     val newData = dataRepository.getFoloweeData()
                     map.putAll(newData)
                     // make a copy of the map
@@ -55,23 +57,35 @@ class DataState(
         }
     }
     val data = _data.stateIn(viewModelScope, SharingStarted.WhileSubscribed(stopTimeout), mapOf())
-    private val _invitations = flow {
-        dataRepository.setup()
-        var lastInvite: Array<Confirmation>? = null
-        try {
-            while(true) {
-                val elapsed = measureTime {
-                    val invitations = dataRepository.getInvitations()
-                    if (!invitations.contentEquals(lastInvite))  {
-                        emit(arrayOf(*invitations))
-                        lastInvite = invitations
+    private val _invitations = MutableStateFlow(emptyArray<Confirmation>())
+    val invitations = _invitations.asStateFlow()
+    
+    private suspend fun updateInvitations() {
+        val invitations = dataRepository.getInvitations()
+        _invitations.emit(invitations)
+    }
+    
+    init {
+        viewModelScope.launch {
+            dataRepository.setup()
+            try {
+                while(true) {
+                    val elapsed = measureTime {
+                        updateInvitations()
                     }
+                    delay(minInvitationPeriod - elapsed)
                 }
-                delay(minInvitationPeriod - elapsed)
+            } finally {
             }
-        } finally {
-            lastInvite = null
         }
     }
-    val invitations = _invitations.stateIn(viewModelScope, SharingStarted.WhileSubscribed(stopTimeout), emptyArray())
+    
+    suspend fun acceptConfirmation(confirmation: Confirmation) {
+        dataRepository.acceptConfirmation(confirmation)
+        updateInvitations()
+    }
+    suspend fun rejectConfirmation(confirmation: Confirmation) {
+        dataRepository.acceptConfirmation(confirmation)
+        updateInvitations()
+    }
 }

@@ -4,8 +4,6 @@ import android.content.Context
 import android.os.AsyncTask
 import kotlinx.coroutines.suspendCancellableCoroutine
 import net.openid.appauth.*
-import net.openid.appauth.AuthState.AuthStateAction
-import net.openid.appauth.AuthorizationException.AuthorizationRequestErrors
 import net.openid.appauth.connectivity.ConnectionBuilder
 import net.openid.appauth.connectivity.DefaultConnectionBuilder
 import org.json.JSONObject
@@ -26,15 +24,17 @@ private val clockClass by lazy {
 }
 
 private val tokenRequestTask by lazy {
-    Class.forName("net.openid.appauth.AuthorizationService.TokenRequestTask").run {
+    Class.forName("net.openid.appauth.AuthorizationService\$TokenRequestTask").run {
         getDeclaredConstructor(
             TokenRequest::class.java,
             ClientAuthentication::class.java,
             ConnectionBuilder::class.java,
             clockClass,
             AuthorizationService.TokenResponseCallback::class.java,
-            java.lang.Boolean.TYPE
-        )
+            java.lang.Boolean::class.java
+        ).apply {
+            isAccessible = true
+        }
     }
 }
 
@@ -49,14 +49,14 @@ suspend fun performTokenRequest(
     connectionBuilder: ConnectionBuilder = DefaultConnectionBuilder.INSTANCE,
     skipIssuerHttpsCheck: Boolean = false
 ): TokenResponse = suspendCancellableCoroutine { continuation ->
-    val callback = { response: TokenResponse?, ex: AuthorizationException? ->
+    val callback = AuthorizationService.TokenResponseCallback { response, ex ->
         if (response != null) {
             continuation.resume(response)
         } else {
             continuation.resumeWithException(ex!!)
         }
-    } as AuthorizationService.TokenResponseCallback
-    // TokenRequestTask extends AsyncTask<Unit, Unit, JSONObject>,
+    }
+    // TokenRequestTask extends AsyncTask<Void, Void, JSONObject>,
     // so this cast will succeed at runtime
     @Suppress("UNCHECKED_CAST")
     val task = tokenRequestTask.newInstance(
@@ -66,7 +66,7 @@ suspend fun performTokenRequest(
         systemClock,
         callback,
         skipIssuerHttpsCheck
-    ) as AsyncTask<Unit, Unit, JSONObject>
+    ) as AsyncTask<Void, Void, JSONObject>
     task.execute()
     continuation.invokeOnCancellation {
         task.cancel(true)
