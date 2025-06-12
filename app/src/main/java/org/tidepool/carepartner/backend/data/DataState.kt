@@ -1,13 +1,17 @@
-package org.tidepool.carepartner.backend
+package org.tidepool.carepartner.backend.data
 
 import android.util.Log
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import net.openid.appauth.AuthState
 import net.openid.appauth.AuthorizationException
+import net.openid.appauth.AuthorizationService
 import net.openid.appauth.TokenResponse
+import org.tidepool.carepartner.backend.PersistentData
+import org.tidepool.carepartner.backend.PersistentData.Companion.NoAuthorizationException
+import org.tidepool.carepartner.backend.PillData
+import org.tidepool.carepartner.backend.WarningType
 import org.tidepool.carepartner.backend.WarningType.*
 import org.tidepool.carepartner.backend.jank.performTokenRequest
 import org.tidepool.sdk.CommunicationHelper
@@ -26,7 +30,9 @@ import org.tidepool.sdk.requests.Data.CommaSeparatedArray
 import org.tidepool.sdk.requests.receivedInvitations
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.Collections
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.seconds
 import kotlin.time.measureTime
@@ -40,22 +46,8 @@ class DataState(
         private val stopTimeout = 10.seconds
     }
     
-    private val _data = flow {
-        setup()
-        val map = HashMap<String, PillData>()
-        try {
-            while (true) {
-                val elapsed = measureTime {
-                    update(map)
-                    emit(Collections.unmodifiableMap(HashMap(map)))
-                }
-                delay(minPeriod - elapsed)
-            }
-        } finally {
-            shutdown()
-        }
-    }
-    val data = _data.stateIn(viewModelScope, SharingStarted.WhileSubscribed(stopTimeout), HashMap<String,PillData>())
+    private val _data: MutableStateFlow<Map<String, PillData>> = MutableStateFlow(HashMap())
+    val data = _data.asStateFlow()
     private val _invitations = MutableStateFlow(emptyArray<Confirmation>())
     val invitations = _invitations.asStateFlow()
     
@@ -65,7 +57,7 @@ class DataState(
         )
     }
     
-    private fun getIdFlow(): Flow<Pair<String, String?>> = flow {
+    private fun AuthorizationService.getIdFlow(): Flow<Pair<String, String?>> = flow {
         val userId = communicationHelper.users.getCurrentUserInfo(getAccessToken()).userid
         Log.v(TAG, "Listing users...")
         val trustUsers = communicationHelper.metadata.listUsers(getAccessToken(), userId)
@@ -76,19 +68,20 @@ class DataState(
         }
     }
     
-    private suspend fun setup() {
-        @OptIn(ExperimentalCoroutinesApi::class, DelicateCoroutinesApi::class)
-        updateContext = newSingleThreadContext("UpdateContext")
-        exchangeAuthCode()
-    }
-    
-    private suspend fun update(map: MutableMap<String, PillData>) {
-        getIdFlow()
-            .map { (id, name) -> id to getData(id, name) }
-            .collect { (name, data) ->
-                map[name] = data
+    suspend fun update(authService: AuthorizationService) {
+        val list = ArrayList<Pair<String, PillData>>()
+        authService.getIdFlow()
+            .map { (id, name) -> id to authService.getData(id, name) }
+            .toCollection(list)
+        val map = mutableMapOf(*list.toTypedArray())
+        for ((key, value) in _data.value) {
+            if (!map.containsKey(key)) {
+                map[key] = value
             }
-        updateInvitations()
+        }
+        _data.value = map
+        
+        authService.updateInvitations()
     }
     
     private suspend fun shutdown() {
@@ -96,7 +89,7 @@ class DataState(
         TODO("Cleanly shut down")
     }
     
-    private suspend fun updateInvitations() {
+    private suspend fun AuthorizationService.updateInvitations() {
         val userId = communicationHelper.users.getCurrentUserInfo(getAccessToken()).userid
         val invitations = communicationHelper.confirmations.receivedInvitations(
             getAccessToken(),
@@ -104,31 +97,31 @@ class DataState(
         )
     }
     
-    private suspend fun exchangeAuthCode() {
-        val request = authState.lastAuthorizationResponse?.createTokenExchangeRequest()
-            ?: throw RuntimeException("No last authorization response!")
-        try {
-            val response = performTokenRequest(request)
-            authState.update(response, null)
-        } catch(ex: AuthorizationException) {
-            authState.update(null as TokenResponse?, ex)
+    private suspend fun AuthorizationService.exchangeAuthCode() = suspendCoroutine { continuation ->
+        val resp = PersistentData.authState.lastAuthorizationResponse ?: throw NoAuthorizationException()
+        performTokenRequest(resp.createTokenExchangeRequest()) { newResp, ex ->
+            authState.update(newResp, ex)
+            if (ex != null) {
+                continuation.resumeWithException(ex)
+            } else {
+                continuation.resume(Unit)
+            }
         }
     }
     
-    @OptIn(ExperimentalCoroutinesApi::class)
-    private lateinit var updateContext: CloseableCoroutineDispatcher
-    
-    
-    @OptIn(ExperimentalCoroutinesApi::class)
-    suspend fun getAccessToken(): String {
-        if (authState.needsTokenRefresh) {
-            withContext(updateContext) {
-                if (authState.needsTokenRefresh) {
-                    updateAccessToken()
+    private suspend fun AuthorizationService.getAccessToken(): String {
+        if (PersistentData.authState.accessToken == null) {
+            exchangeAuthCode()
+        }
+        return suspendCancellableCoroutine { continuation ->
+            authState.performActionWithFreshTokens(this) { accessToken, _, ex ->
+                if (ex != null) {
+                    continuation.resumeWithException(ex)
+                } else {
+                    continuation.resume(accessToken!!)
                 }
             }
         }
-        return authState.accessToken ?: throw NullPointerException("Access token does not exist")
     }
     
     private suspend fun updateAccessToken() {
@@ -216,7 +209,7 @@ class DataState(
         return result.filterIsInstance<FoodData>().maxByOrNull { it.time ?: Instant.MIN }?.time
     }
     
-    private suspend fun getData(id: String, name: String?): PillData = coroutineScope {
+    private suspend fun AuthorizationService.getData(id: String, name: String?): PillData = coroutineScope {
         var pillData: PillData
         val timeTaken = measureTime {
             var lastBolus: Instant? = null

@@ -7,6 +7,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.addCallback
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
@@ -14,6 +15,7 @@ import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import org.tidepool.carepartner.backend.PersistentData.Companion.authState
+import org.tidepool.carepartner.backend.data.DataState
 import org.tidepool.carepartner.ui.theme.LoopFollowTheme
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -54,6 +56,7 @@ class FollowActivity : ComponentActivity() {
             authState.update(resp, ex)
         }
         enableEdgeToEdge()
+        val viewModels: DataState by viewModels()
         setContent {
             LoopFollowTheme {
                 ui.App(modifier = Modifier.fillMaxSize(), backPressed = backPressed)

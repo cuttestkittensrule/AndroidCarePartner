@@ -50,12 +50,11 @@ android {
 }
 
 dependencies {
-    //
     implementation(libs.appauth)
-    implementation("org.tidepool.api:TidepoolKotlinAPI")
-    implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0-RC")
-    implementation("androidx.datastore:datastore-preferences:1.1.1")
+    implementation(libs.tidepoolkotlinapi)
+    implementation(libs.androidx.concurrent.futures.ktx)
+    implementation(libs.kotlinx.coroutines.core)
+    implementation(libs.androidx.datastore.preferences)
     
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.core.ktx)
@@ -66,6 +65,7 @@ dependencies {
     implementation(libs.androidx.ui.graphics)
     implementation(libs.androidx.ui.tooling.preview)
     implementation(libs.androidx.material3)
+    implementation(libs.work.runtime.ktx)
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
