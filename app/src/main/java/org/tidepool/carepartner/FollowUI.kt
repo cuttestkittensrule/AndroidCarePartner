@@ -37,6 +37,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.LifecycleOwner
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import androidx.lifecycle.viewmodel.compose.viewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -50,6 +52,9 @@ import org.tidepool.carepartner.backend.PersistentData.Companion.logout
 import org.tidepool.carepartner.backend.PillData
 import org.tidepool.carepartner.backend.WarningType
 import org.tidepool.carepartner.backend.WarningType.*
+import org.tidepool.carepartner.backend.data.DataRepository
+import org.tidepool.carepartner.backend.data.DataState
+import org.tidepool.carepartner.backend.data.FakeBackendDataSource
 import org.tidepool.carepartner.ui.theme.Grey0300
 import org.tidepool.carepartner.ui.theme.LoopFollowTheme
 import org.tidepool.carepartner.ui.theme.LoopTheme
@@ -67,8 +72,6 @@ import java.time.format.FormatStyle.SHORT
 import java.util.Locale
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
-import java.util.stream.Collectors.toMap
-import java.util.stream.Stream
 import kotlin.math.roundToInt
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Duration.Companion.hours
@@ -104,12 +107,12 @@ class FollowUI : DefaultLifecycleObserver {
     
     @Composable
     fun Invitations(
-        mutableInvitations: MutableState<Array<Confirmation>>,
+        invitationsState: State<Array<Confirmation>>,
         userNumber: MutableIntState,
-        isExpanded: MutableState<Boolean> = mutableStateOf(false),
-        modifier: Modifier = Modifier
+        modifier: Modifier = Modifier,
+        isExpanded: MutableState<Boolean> = mutableStateOf(false)
     ) {
-        val invitations by mutableInvitations
+        val invitations by invitationsState
         var expanded by isExpanded
         Column(
             modifier = modifier
@@ -172,7 +175,7 @@ class FollowUI : DefaultLifecycleObserver {
                     HorizontalDivider()
                 }
                 when (state) {
-                    Invitations   -> InvitationsList(mutableInvitations)
+                    Invitations   -> InvitationsList(invitationsState)
                     NoInvitations -> NoInvitations(userNumber)
                     else          -> Unit
                 }
@@ -232,9 +235,9 @@ class FollowUI : DefaultLifecycleObserver {
     
     @Composable
     fun InvitationsList(
-        mutableInvitations: MutableState<Array<Confirmation>>
+        invitationsState: State<Array<Confirmation>>
     ) {
-        val invitations by mutableInvitations
+        val invitations by invitationsState
         LazyColumn(
             contentPadding = PaddingValues(vertical = 10.dp, horizontal = 5.dp)
         ) {
@@ -761,11 +764,32 @@ class FollowUI : DefaultLifecycleObserver {
     fun App(
         modifier: Modifier = Modifier,
         allData: Array<out PillData>? = null,
-        backPressed: MutableState<Boolean> = mutableStateOf(false)
+        backPressed: MutableState<Boolean> = mutableStateOf(false),
+        dataState: DataState = viewModel(
+            factory = DataState.Factory,
+            extras = MutableCreationExtras().apply {
+                if (allData == null) {
+                    set(
+                        DataState.DATA_REPOSITORY_KEY,
+                        DataRepository(
+                            FakeBackendDataSource()
+                        )
+                    )
+                } else {
+                    val map = allData.associateBy { it.name }
+                    set(
+                        DataState.DATA_REPOSITORY_KEY,
+                        DataRepository(
+                            FakeBackendDataSource(foloweeData = map)
+                        )
+                    )
+                }
+            }
+        )
     ) {
-        val mutableIds = remember { mutableStateOf(mapOf<String, PillData>()) }
-        val ids by mutableIds
-        val mutableInvitations = remember { mutableStateOf(arrayOf<Confirmation>()) }
+        val idsState = dataState.data.collectAsState()
+        val ids by idsState
+        val invitations = dataState.invitations.collectAsState()
         val lastError = remember { mutableStateOf<Exception?>(null) }
         var menuVisible by remember { mutableStateOf(false) }
         val invitationsVisible = remember(ids.isEmpty()) { mutableStateOf(ids.isEmpty()) }
@@ -866,10 +890,10 @@ class FollowUI : DefaultLifecycleObserver {
                     }
                     
                     Invitations(
-                        mutableInvitations,
+                        invitations,
                         remember(ids) { mutableIntStateOf(ids.size) },
-                        invitationsVisible,
-                        modifier = Modifier.align(Alignment.BottomCenter)
+                        Modifier.align(Alignment.BottomCenter),
+                        invitationsVisible
                     )
                 }
             }
@@ -886,20 +910,6 @@ class FollowUI : DefaultLifecycleObserver {
                 Menu {
                     menuVisible = false
                 }
-            }
-        }
-        
-        LaunchedEffect(true) {
-            if (allData == null) {
-                updater = DataUpdater(
-                    mutableIds,
-                    mutableInvitations,
-                    lastError,
-                    context
-                )
-                startDataCollection()
-            } else {
-                mutableIds.value = Stream.of(*allData).collect(toMap({ it.name }) { it })
             }
         }
     }
@@ -1107,7 +1117,7 @@ class FollowUI : DefaultLifecycleObserver {
                         Instant.now() - 1.minutes,
                         Instant.now() - 2.minutes,
                         Instant.now() - 1.5.days,
-                        Trend.constant
+                        constant
                     )
                 )
             )

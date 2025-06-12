@@ -9,13 +9,19 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
+import androidx.lifecycle.*
+import androidx.lifecycle.viewmodel.MutableCreationExtras
+import kotlinx.coroutines.launch
 import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationResponse
 import net.openid.appauth.AuthorizationService
 import org.tidepool.carepartner.backend.PersistentData.Companion.authState
+import org.tidepool.carepartner.backend.data.DataRepository
 import org.tidepool.carepartner.backend.data.DataState
+import org.tidepool.carepartner.backend.data.RealBackendDataSource
 import org.tidepool.carepartner.ui.theme.LoopFollowTheme
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -56,7 +62,14 @@ class FollowActivity : ComponentActivity() {
             authState.update(resp, ex)
         }
         enableEdgeToEdge()
-        val viewModels: DataState by viewModels()
+        val viewModelStoreOwner: ViewModelStoreOwner = this
+        val dataState: DataState = ViewModelProvider.create(
+            viewModelStoreOwner,
+            factory = DataState.Factory,
+            extras = MutableCreationExtras().apply {
+                set(DataState.DATA_REPOSITORY_KEY, DataRepository(RealBackendDataSource(authState)))
+            },
+        )[DataState::class]
         setContent {
             LoopFollowTheme {
                 ui.App(modifier = Modifier.fillMaxSize(), backPressed = backPressed)

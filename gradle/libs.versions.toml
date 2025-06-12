@@ -15,8 +15,6 @@ appauth = "0.11.1"
 lifecycleViewmodelCompose = "2.8.3"
 uiTestJunit4 = "1.6.8"
 uiTestManifest = "1.6.8"
-uiTestJunit4Android = "1.6.8"
-work = "2.10.1"
 
 [libraries]
 androidx-concurrent-futures-ktx = { module = "androidx.concurrent:concurrent-futures-ktx", version.ref = "concurrentFuturesKtx" }
@@ -41,7 +39,6 @@ kotlinx-coroutines-core = { module = "org.jetbrains.kotlinx:kotlinx-coroutines-c
 tidepoolkotlinapi = { module = "org.tidepool.api:TidepoolKotlinAPI" }
 ui-test-junit4 = { module = "androidx.compose.ui:ui-test-junit4", version.ref = "uiTestJunit4" }
 ui-test-manifest = { module = "androidx.compose.ui:ui-test-manifest", version.ref = "uiTestManifest" }
-work-runtime-ktx = { group = "androidx.work", name = "work-runtime-ktx", version.ref = "work" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
