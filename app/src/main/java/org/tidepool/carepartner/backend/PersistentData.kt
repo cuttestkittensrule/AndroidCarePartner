@@ -48,6 +48,9 @@ class PersistentData {
         private var _lastName by data::lastName
         val lastName by this::_lastName
         var unit by data::unit
+
+        val hasRefreshToken
+            get() = authState.refreshToken?.isEmpty() != false
         
         private val lock = ReentrantLock()
         
