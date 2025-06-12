@@ -36,33 +36,16 @@ class DataState(
         }
     }
     
-    private val _data = flow {
-        dataRepository.setup()
-        val map = mutableMapOf<String, PillData>()
-        try {
-            while(true) {
-                val elapsed = measureTime {
-                    if (PersistentData.lastEmail == null) {
-                        dataRepository.saveEmail()
-                    }
-                    val newData = dataRepository.getFoloweeData()
-                    map.putAll(newData)
-                    // make a copy of the map
-                    emit(HashMap(map))
-                }
-                delay(minDataPeriod - elapsed)
-            }
-        } finally {
-            map.clear()
-        }
-    }
-    val data = _data.stateIn(viewModelScope, SharingStarted.WhileSubscribed(stopTimeout), mapOf())
+    private val _data = MutableStateFlow(emptyMap<String, PillData>())
+    val data = _data.asStateFlow()
     private val _invitations = MutableStateFlow(emptyArray<Confirmation>())
     val invitations = _invitations.asStateFlow()
     
-    private suspend fun updateInvitations() {
+    suspend fun updateInvitations() {
         val invitations = dataRepository.getInvitations()
-        _invitations.emit(invitations)
+        if (!invitations.contentEquals(_invitations.value)) {
+            _invitations.emit(invitations)
+        }
     }
     
     init {
@@ -78,11 +61,38 @@ class DataState(
             } finally {
             }
         }
+        viewModelScope.launch {
+            dataRepository.setup()
+            val map = mutableMapOf<String, PillData>()
+            try {
+                while(true) {
+                    val elapsed = measureTime {
+                        if (PersistentData.lastEmail == null) {
+                            dataRepository.saveEmail()
+                        }
+                        val newData = dataRepository.getFoloweeData()
+                        map.putAll(newData)
+                        // make a copy of the map
+                        _data.emit(HashMap(map))
+                    }
+                    delay(minDataPeriod - elapsed)
+                }
+            } finally {
+                map.clear()
+            }
+        }
+    }
+    
+    suspend fun updateData() {
+        val oldData = HashMap(_data.value)
+        oldData.putAll(dataRepository.getFoloweeData())
+        _data.emit(oldData)
     }
     
     suspend fun acceptConfirmation(confirmation: Confirmation) {
         dataRepository.acceptConfirmation(confirmation)
         updateInvitations()
+        updateData()
     }
     suspend fun rejectConfirmation(confirmation: Confirmation) {
         dataRepository.acceptConfirmation(confirmation)

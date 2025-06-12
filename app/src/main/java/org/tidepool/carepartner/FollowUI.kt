@@ -83,7 +83,8 @@ class FollowUI : DefaultLifecycleObserver {
         invitationsState: State<Array<Confirmation>>,
         userNumber: MutableIntState,
         modifier: Modifier = Modifier,
-        isExpanded: MutableState<Boolean> = mutableStateOf(false)
+        isExpanded: MutableState<Boolean> = mutableStateOf(false),
+        dataState: DataState = defaultDataState()
     ) {
         val invitations by invitationsState
         var expanded by isExpanded
@@ -148,8 +149,8 @@ class FollowUI : DefaultLifecycleObserver {
                     HorizontalDivider()
                 }
                 when (state) {
-                    Invitations   -> InvitationsList(invitationsState)
-                    NoInvitations -> NoInvitations(userNumber)
+                    Invitations   -> InvitationsList(invitationsState, dataState)
+                    NoInvitations -> NoInvitations(userNumber, dataState)
                     else          -> Unit
                 }
             }
@@ -180,7 +181,7 @@ class FollowUI : DefaultLifecycleObserver {
     @Composable
     fun NoInvitations(
         userNumber: MutableIntState,
-        
+        dataState: DataState = defaultDataState()
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
@@ -196,7 +197,7 @@ class FollowUI : DefaultLifecycleObserver {
                 onClick = {
                     runBlocking {
                         withTimeout(5.seconds) {
-                        
+                            dataState.updateInvitations()
                         }
                     }
                 },
@@ -209,7 +210,8 @@ class FollowUI : DefaultLifecycleObserver {
     
     @Composable
     fun InvitationsList(
-        invitationsState: State<Array<Confirmation>>
+        invitationsState: State<Array<Confirmation>>,
+        dataState: DataState = defaultDataState()
     ) {
         val invitations by invitationsState
         LazyColumn(
@@ -218,7 +220,7 @@ class FollowUI : DefaultLifecycleObserver {
             items(
                 invitations
             ) {
-                Invitation(it)
+                Invitation(it, dataState)
             }
         }
     }
@@ -873,7 +875,8 @@ class FollowUI : DefaultLifecycleObserver {
                         invitations,
                         remember(ids) { mutableIntStateOf(ids.size) },
                         Modifier.align(Alignment.BottomCenter),
-                        invitationsVisible
+                        invitationsVisible,
+                        dataState
                     )
                 }
             }
