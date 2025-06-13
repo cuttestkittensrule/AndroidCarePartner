@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -16,11 +17,13 @@ import net.openid.appauth.AuthorizationException
 import net.openid.appauth.AuthorizationService
 import org.tidepool.carepartner.backend.PersistentData
 import org.tidepool.carepartner.backend.PersistentData.Companion.NoAuthorizationException
-import org.tidepool.carepartner.backend.PersistentData.Companion.accessTokenExpiration
 import org.tidepool.carepartner.backend.PersistentData.Companion.getAccessToken
 import org.tidepool.carepartner.backend.PersistentData.Companion.readFromDisk
-import java.time.Instant
 import kotlin.time.Duration.Companion.seconds
+
+private const val REAUTH_SERVICE_JOB_ID = 1
+
+private var TAG = MainActivity::class.java.simpleName
 
 class MainActivity : ComponentActivity() {
     
@@ -34,26 +37,17 @@ class MainActivity : ComponentActivity() {
             HomeUI()
             LaunchedEffect(true) {
                 baseContext.readFromDisk()
-                try {
-                    withTimeout(15.seconds) {
-                        getAccessToken()
+                ReauthService.start(baseContext, REAUTH_SERVICE_JOB_ID)
+                if (PersistentData.hasRefreshToken) {
+                    sendRefreshAccessTokenRequestIfNeeded(baseContext) { ex ->
+                        if (ex != null) {
+                            Log.w(TAG, ex)
+                        } else {
+                            // We either had a valid token, or we just created one.
+                            baseContext.startActivity(
+                                Intent(baseContext, FollowActivity::class.java))
+                        }
                     }
-                } catch (_: TimeoutCancellationException) {
-                    // don't care if it times out
-                } catch (_: AuthorizationException) {
-                    // don't care if access token get fails
-                } catch (_: NoAuthorizationException) {
-                    // don't care if it can't perform the authorization
-                }
-                
-                if (
-                    PersistentData.authState.accessTokenExpiration?.let {
-                        Instant.now().until(it) > 10.seconds
-                    } == true
-                ) {
-                    startActivity(Intent(baseContext, FollowActivity::class.java))
-                } else if (PersistentData.lastEmail != null) {
-                    authorize()
                 }
             }
         }

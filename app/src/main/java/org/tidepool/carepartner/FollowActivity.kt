@@ -10,13 +10,15 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import androidx.lifecycle.*
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.ViewModelProvider
+import androidx.lifecycle.ViewModelStoreOwner
+import androidx.lifecycle.lifecycleScope
+import androidx.lifecycle.repeatOnLifecycle
 import androidx.lifecycle.viewmodel.MutableCreationExtras
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
-import net.openid.appauth.AuthorizationException
-import net.openid.appauth.AuthorizationResponse
 import org.tidepool.carepartner.backend.PersistentData.Companion.authState
 import org.tidepool.carepartner.backend.PersistentData.Companion.writeToDisk
 import org.tidepool.carepartner.backend.data.DataRepository
@@ -25,8 +27,6 @@ import org.tidepool.carepartner.backend.data.RealBackendDataSource
 import org.tidepool.carepartner.ui.theme.LoopFollowTheme
 import java.time.Instant
 import java.time.temporal.ChronoUnit
-import java.util.concurrent.Executors
-import java.util.concurrent.ScheduledExecutorService
 import kotlin.time.Duration
 import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Duration.Companion.nanoseconds
@@ -35,7 +35,6 @@ import kotlin.time.Duration.Companion.seconds
 class FollowActivity : ComponentActivity() {
     companion object {
         const val TAG = "FollowActivity"
-        val executor: ScheduledExecutorService = Executors.newScheduledThreadPool(1)
     }
     
     private lateinit var ui: FollowUI
@@ -43,19 +42,14 @@ class FollowActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ui = FollowUI().apply { lifecycle.addObserver(this) }
-        val resp = AuthorizationResponse.fromIntent(intent)
-        val ex = AuthorizationException.fromIntent(intent)
-        if ((resp == null).xor(ex == null)) {
-            authState.update(resp, ex)
-        }
-        
+
         @SuppressLint("SourceLockedOrientationActivity")
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
         val backPressed = mutableStateOf(false)
         onBackPressedDispatcher.addCallback(this) {
             backPressed.value = true
         }
-        
+
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
                 delay(30.seconds)
@@ -65,7 +59,7 @@ class FollowActivity : ComponentActivity() {
                 }
             }
         }
-        
+
         enableEdgeToEdge()
         val viewModelStoreOwner: ViewModelStoreOwner = this
         val dataState: DataState = ViewModelProvider.create(

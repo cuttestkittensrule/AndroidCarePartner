@@ -17,12 +17,10 @@ import org.tidepool.sdk.CommunicationHelper
 import org.tidepool.sdk.Environment
 import org.tidepool.sdk.Environments
 import org.tidepool.sdk.model.BloodGlucose.Units
-import java.time.Instant
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
-import kotlin.coroutines.suspendCoroutine
 import kotlin.time.Duration.Companion.seconds
 
 class PersistentData {
@@ -48,6 +46,9 @@ class PersistentData {
         private var _lastName by data::lastName
         val lastName by this::_lastName
         var unit by data::unit
+
+        val hasRefreshToken
+            get() = authState.refreshToken?.isEmpty() != false
         
         private val lock = ReentrantLock()
         
@@ -147,21 +148,9 @@ class PersistentData {
          */
         class NoAuthorizationException : Exception("No Authorization Response")
         
-        private suspend fun Context.exchangeAuthCode() = suspendCoroutine { continuation ->
-            val resp = authState.lastAuthorizationResponse ?: throw NoAuthorizationException()
-            AuthorizationService(this).performTokenRequest(resp.createTokenExchangeRequest()) { newResp, ex ->
-                _authState.update(newResp, ex)
-                if (ex != null) {
-                    continuation.resumeWithException(ex)
-                } else {
-                    continuation.resume(Unit)
-                }
-            }
-        }
-        
         suspend fun Context.getAccessToken(): String {
             if (authState.accessToken == null) {
-                exchangeAuthCode()
+                throw NoAuthorizationException()
             }
             return suspendCancellableCoroutine { continuation ->
                 val authService by lazy { AuthorizationService(this) }
@@ -200,8 +189,5 @@ class PersistentData {
                 }
             }
         }
-        
-        val AuthState.accessTokenExpiration: Instant?
-            get() = accessTokenExpirationTime?.let { Instant.ofEpochMilli(it) }
     }
 }

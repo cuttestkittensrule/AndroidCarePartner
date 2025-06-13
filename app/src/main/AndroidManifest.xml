@@ -12,6 +12,10 @@
         android:supportsRtl="true"
         android:theme="@style/Theme.LoopFollow"
         tools:targetApi="31">
+        <service
+            android:name="org.tidepool.carepartner.ReauthService"
+            android:permission="android.permission.BIND_JOB_SERVICE" >
+        </service>
         <activity
             android:name=".MainActivity"
             android:exported="true"
