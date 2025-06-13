@@ -21,7 +21,7 @@ class DataState(
 ): ViewModel() {
     companion object {
         const val TAG = "DataState"
-        private val minDataPeriod = 5.minutes
+        private val minDataPeriod = 1.minutes
         private val minInvitationPeriod = 1.minutes
         private val stopTimeout = 10.seconds
         
