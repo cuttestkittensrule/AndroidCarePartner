@@ -10,10 +10,6 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.Modifier
-import net.openid.appauth.AuthorizationException
-import net.openid.appauth.AuthorizationResponse
-import net.openid.appauth.AuthorizationService
-import org.tidepool.carepartner.backend.PersistentData.Companion.authState
 import org.tidepool.carepartner.ui.theme.LoopFollowTheme
 import java.time.Instant
 import java.time.temporal.ChronoUnit
@@ -34,24 +30,11 @@ class FollowActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         ui = FollowUI().apply { lifecycle.addObserver(this) }
-        val resp = AuthorizationResponse.fromIntent(intent)
-        val ex = AuthorizationException.fromIntent(intent)
         @SuppressLint("SourceLockedOrientationActivity")
         requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-        if (resp != null) {
-            val authService = AuthorizationService(this)
-            authService.performTokenRequest(
-                resp.createTokenExchangeRequest()
-            ) { newResp, newEx ->
-                authState.update(newResp, newEx)
-            }
-        }
         val backPressed = mutableStateOf(false)
         onBackPressedDispatcher.addCallback(this) {
             backPressed.value = true
-        }
-        if ((resp == null).xor(ex == null)) {
-            authState.update(resp, ex)
         }
         enableEdgeToEdge()
         setContent {
